@@ -120,7 +120,7 @@ pub const StbImage = struct {
         const new_size = new_width * new_height * im.channels;
         const new_data = @as([*]u8, @ptrCast(zstbMalloc(new_size)));
 
-        stbir_resize_uint8(
+        stbir_resize_uint8_linear(
             im.raw.ptr,
             @as(c_int, @intCast(im.width)),
             @as(c_int, @intCast(im.height)),
@@ -145,7 +145,6 @@ pub const StbImage = struct {
 var mem_allocator: ?std.mem.Allocator = null;
 var mem_allocations: ?std.AutoHashMap(usize, usize) = null;
 var mem_mutex: std.Thread.Mutex = .{};
-// const mem_alignment = 16;
 
 extern var zstbMallocPtr: ?*const fn (size: usize) callconv(.C) ?*anyopaque;
 extern var zstbReallocPtr: ?*const fn (ptr: ?*anyopaque, size: usize) callconv(.C) ?*anyopaque;
@@ -156,12 +155,6 @@ fn zstbMalloc(size: usize) callconv(.C) ?*anyopaque {
     defer mem_mutex.unlock();
 
     const mem = mem_allocator.?.alloc(u8, size) catch @panic("ZSTBI: out of memory");
-    // const mem = mem_allocator.?.alignedAlloc(
-    //     u8,
-    //     mem_alignment,
-    //     size,
-    // ) catch @panic("ZSTBI: out of memory");
-
     mem_allocations.?.put(@intFromPtr(mem.ptr), size) catch @panic("ZSTBI: hm out of memory");
 
     return mem.ptr;
@@ -173,17 +166,15 @@ fn zstbRealloc(ptr: ?*anyopaque, size: usize) callconv(.C) ?*anyopaque {
 
     const old_size = if (ptr != null) mem_allocations.?.get(@intFromPtr(ptr.?)).? else 0;
     const old_mem = if (old_size > 0)
-        // @as([*]align(mem_alignment) u8, @ptrCast(@alignCast(ptr)))[0..old_size]
         @as([*]u8, @ptrCast(ptr))[0..old_size]
     else
-        // @as([*]align(mem_alignment) u8, undefined)[0..0];
         @as([*]u8, undefined)[0..0];
 
     const new_mem = mem_allocator.?.realloc(old_mem, size) catch @panic("ZSTBI: out of memory");
 
     if (ptr != null) {
         const removed = mem_allocations.?.remove(@intFromPtr(ptr.?));
-        std.debug.assert(removed);
+        assert(removed);
     }
 
     mem_allocations.?.put(@intFromPtr(new_mem.ptr), size) catch @panic("ZSTBI: hm out of memory");
@@ -198,7 +189,7 @@ fn zstbFree(maybe_ptr: ?*anyopaque) callconv(.C) void {
 
         const size = mem_allocations.?.fetchRemove(@intFromPtr(ptr)).?.value;
         const mem = @as([*]u8, @ptrCast(ptr))[0..size];
-        // const mem = @as([*]align(mem_alignment) u8, @ptrCast(@alignCast(ptr)))[0..size];
+
         mem_allocator.?.free(mem);
     }
 }
@@ -257,7 +248,7 @@ extern fn stbi_write_png(
     stride_in_bytes: c_int,
 ) c_int;
 
-extern fn stbir_resize_uint8(
+extern fn stbir_resize_uint8_linear(
     input_pixels: [*]const u8,
     input_w: c_int,
     input_h: c_int,
@@ -266,7 +257,7 @@ extern fn stbir_resize_uint8(
     output_w: c_int,
     output_h: c_int,
     output_stride_in_bytes: c_int,
-    num_channels: c_int,
+    stbir_pixel_layout: c_int,
 ) void;
 
 test "empty raw image" {
@@ -354,23 +345,27 @@ test "write PNG image" {
     try testing.expect(im1.width == im2.width);
     try testing.expect(im1.height == im2.height);
     try testing.expect(im1.channels == im2.channels);
+
+    try std.fs.cwd().deleteFile("test_write.png");
 }
 
-// test "write JPG image" {
-//     init(testing.allocator);
-//     defer deinit();
+test "write JPG image" {
+    init(testing.allocator);
+    defer deinit();
 
-//     var im1 = try StbImage.fromFile("pics/b_img.jpg");
-//     defer im1.destroy();
-//     try im1.write("test_write.jpg", ImageWriteFormat.jpg);
+    var im1 = try StbImage.fromFile("pics/b_img.jpg");
+    defer im1.destroy();
+    try im1.write("test_write.jpg", ImageWriteFormat.jpg);
 
-//     var im2 = try StbImage.fromFile("test_write.jpg");
-//     defer im2.destroy();
+    var im2 = try StbImage.fromFile("test_write.jpg");
+    defer im2.destroy();
 
-//     try testing.expect(im1.width == im2.width);
-//     try testing.expect(im1.height == im2.height);
-//     try testing.expect(im1.channels == im2.channels);
-// }
+    try testing.expect(im1.width == im2.width);
+    try testing.expect(im1.height == im2.height);
+    try testing.expect(im1.channels == im2.channels);
+
+    try std.fs.cwd().deleteFile("test_write.jpg");
+}
 
 test "resize from empty" {
     init(testing.allocator);

@@ -2,7 +2,9 @@ const std = @import("std");
 const stb = @import("stb.zig");
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
@@ -14,10 +16,6 @@ pub fn main() !void {
 
     const data = try std.fs.cwd().readFileAlloc(allocator, args[1], 512 * 1024);
     defer allocator.free(data);
-
-    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    // defer arena.deinit();
-    // const arenaAlloc = arena.allocator();
 
     stb.init(allocator);
     defer stb.deinit();

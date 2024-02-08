@@ -28,4 +28,4 @@ void (*zstbirFreePtr)(void* ptr, void* context) = NULL;
 #define STBIR_FREE(ptr, context) zstbirFreePtr(ptr, context)
 
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include "stb_image_resize.h"
+#include "stb_image_resize2.h"

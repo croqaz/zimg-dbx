@@ -2,8 +2,10 @@ const std = @import("std");
 
 const CFlags = &.{
     "-std=c99",
-    "-Wextra",
     "-Wall",
+    "-Wextra",
+    "-fno-exceptions",
+    "-fno-sanitize=undefined",
     // "-O2",
     // "-O0",
     // "-g",
