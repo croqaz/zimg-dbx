@@ -2,6 +2,13 @@ const std = @import("std");
 const testing = std.testing;
 const assert = std.debug.assert;
 
+const Crc32 = std.hash.Crc32;
+const XxHash32 = std.hash.XxHash32;
+const XxHash64 = std.hash.XxHash64;
+const Sha1 = std.crypto.hash.Sha1;
+const Sha256 = std.crypto.hash.sha2.Sha256;
+const Sha3_512 = std.crypto.hash.sha3.Sha3_512;
+
 pub fn init(allocator: std.mem.Allocator) void {
     assert(mem_allocator == null);
     mem_allocator = allocator;
@@ -73,13 +80,14 @@ pub const StbImage = struct {
         }
     }
 
-    /// Create an image from existing allocated data.
-    /// The creator of the raw data is responsible for managing that memory.
+    /// Create an image from encoded, allocated data.
+    /// The creator of the encoded data is responsible for managing that memory.
     pub fn fromData(data: []const u8) !StbImage {
         var width: c_int = undefined;
         var height: c_int = undefined;
         var channels: c_int = undefined;
 
+        // decode the image data into an array of pixels
         const ptr = stbi_load_from_memory(data.ptr, @as(c_int, @intCast(data.len)), &width, &height, &channels, 0);
         if (ptr == null) return error.NoMemory;
         if (channels < 1) return error.NoChannels;
@@ -101,6 +109,7 @@ pub const StbImage = struct {
         var height: c_int = undefined;
         var channels: c_int = undefined;
 
+        // decode the file into an array of pixels
         const ptr = stbi_load(fname, &width, &height, &channels, 0);
         if (ptr == null) return error.ImageLoadFailed;
         if (channels < 1) return error.NoChannels;
@@ -137,6 +146,48 @@ pub const StbImage = struct {
             .height = new_height,
             .channels = im.channels,
         };
+    }
+
+    pub fn crc32(im: *const StbImage) u32 {
+        const pixels = im.raw[0 .. im.width * im.height * im.channels];
+        return Crc32.hash(pixels);
+    }
+
+    pub fn xxhash32(im: *const StbImage) u64 {
+        const pixels = im.raw[0 .. im.width * im.height * im.channels];
+        return XxHash32.hash(0, pixels);
+    }
+
+    pub fn xxhash64(im: *const StbImage) u64 {
+        const pixels = im.raw[0 .. im.width * im.height * im.channels];
+        return XxHash64.hash(0, pixels);
+    }
+
+    pub fn sha1(im: *const StbImage) [Sha1.digest_length]u8 {
+        const pixels = im.raw[0 .. im.width * im.height * im.channels];
+        var hashed: [Sha1.digest_length]u8 = undefined;
+        Sha1.hash(pixels, &hashed, .{});
+        return hashed;
+        // const sz = Sha1.digest_length;
+        // var hashed: [sz]u8 = undefined;
+        // // this long array must be filled with nulls
+        // var encoded: [sz * 4]u8 = [_]u8{0} ** (sz * 4);
+        // Sha1.hash(pixels, &hashed, .{});
+        // return Base64.Encoder.encode(&encoded, &hashed);
+    }
+
+    pub fn sha256(im: *const StbImage) [Sha256.digest_length]u8 {
+        const pixels = im.raw[0 .. im.width * im.height * im.channels];
+        var hashed: [Sha256.digest_length]u8 = undefined;
+        Sha256.hash(pixels, &hashed, .{});
+        return hashed;
+    }
+
+    pub fn sha512(im: *const StbImage) [Sha3_512.digest_length]u8 {
+        const pixels = im.raw[0 .. im.width * im.height * im.channels];
+        var hashed: [Sha3_512.digest_length]u8 = undefined;
+        Sha3_512.hash(pixels, &hashed, .{});
+        return hashed;
     }
 };
 
@@ -273,6 +324,19 @@ test "empty raw image" {
     try testing.expect(im1.height == 1);
     try testing.expect(im1.channels == 3);
     try testing.expectEqualSlices(u8, &.{ 0, 0, 200 }, im1.raw);
+}
+
+test "empty image hashes" {
+    init(testing.allocator);
+    defer deinit();
+
+    var im1 = try StbImage.new(1, 1, 3);
+    defer im1.destroy();
+
+    try testing.expect(im1.crc32() == 4282505490);
+    try testing.expect(im1.xxhash32() == 4270428348);
+    try testing.expect(im1.xxhash64() == 3569224950158953636);
+    try testing.expectEqualSlices(u8, &.{ 41, 226, 220, 251, 177, 111, 99, 187, 2, 84, 223, 117, 133, 161, 91, 182, 251, 94, 146, 125 }, &im1.sha1());
 }
 
 test "create image from data" {
